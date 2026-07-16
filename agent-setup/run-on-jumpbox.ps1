@@ -63,9 +63,42 @@ if ($account) {
     az login
 }
 
-# Step 5: Create the agent
-Write-Host "`n[6] Creating the Prompt Agent with OpenAPI tool..." -ForegroundColor Yellow
-python C:\PrivateMicrosoftFoundryPOC\agent-setup\create_prompt_agent.py
+# Step 5: Set environment variables for the agent
+Write-Host "`n[6] Setting agent environment..." -ForegroundColor Yellow
+$RG = "rg-foundry-byo-vnet"
+$aiAccount = az cognitiveservices account list --resource-group $RG --query "[0].name" -o tsv
+$env:PROJECT_ENDPOINT = az cognitiveservices account show --name $aiAccount --resource-group $RG --query "properties.endpoint" -o tsv
+$env:FUNCTION_HOSTNAME = "func-order-api-poc-3zvjcwwd3ezpc.azurewebsites.net"  # Update with your Function hostname
+$env:MODEL_DEPLOYMENT = "gpt-4.1"
+
+# Get AI Search connection for Foundry IQ grounding
+$subscriptionId = az account show --query id -o tsv
+$projects = az rest --method get `
+    --url "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$RG/providers/Microsoft.CognitiveServices/accounts/$aiAccount/projects?api-version=2025-04-01-preview" --only-show-errors `
+    2>$null | ConvertFrom-Json
+$projectName = $projects.value[0].name
+$projectResourceId = "/subscriptions/$subscriptionId/resourceGroups/$RG/providers/Microsoft.CognitiveServices/accounts/$aiAccount/projects/$projectName"
+
+$connections = az rest --method get `
+    --url "https://management.azure.com${projectResourceId}/connections?api-version=2025-04-01-preview" `
+    --only-show-errors 2>$null | ConvertFrom-Json
+foreach ($conn in $connections.value) {
+    if ($conn.properties.category -eq "CognitiveSearch") {
+        $env:SEARCH_CONNECTION_ID = $conn.properties.resourceId
+        Write-Host "  Search Connection: $($conn.name)" -ForegroundColor Cyan
+        break
+    }
+}
+
+Write-Host "  PROJECT_ENDPOINT:   $($env:PROJECT_ENDPOINT)" -ForegroundColor Cyan
+Write-Host "  FUNCTION_HOSTNAME:  $($env:FUNCTION_HOSTNAME)" -ForegroundColor Cyan
+Write-Host "  SEARCH_CONNECTION:  $($env:SEARCH_CONNECTION_ID)" -ForegroundColor Cyan
+
+# Step 6: Create the grounded agent (Foundry IQ + Private Function)
+Write-Host "`n[7] Creating the Grounded Procurement Agent..." -ForegroundColor Yellow
+Write-Host "  → Foundry IQ (AI Search) for knowledge grounding" -ForegroundColor Gray
+Write-Host "  → Private Function (VNet 2) for real-time inventory" -ForegroundColor Gray
+python C:\PrivateMicrosoftFoundryPOC\agent-setup\create_grounded_agent.py --demo
 
 Write-Host "`n=====================================" -ForegroundColor Green
 Write-Host "  Done! Test in Azure AI Foundry Portal" -ForegroundColor Green
