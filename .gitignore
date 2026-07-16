@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.env
+
+# Node
+node_modules/
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure Function artifacts
+azure-function/function.zip
+local.settings.json
+
+# Generated config (contains resource-specific values)
+poc-config.json
+
+# Secrets / credentials
+*.pem
+*.key
+*.pfx
+*.p12

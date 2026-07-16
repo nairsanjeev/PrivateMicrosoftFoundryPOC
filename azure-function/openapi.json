@@ -1,0 +1,187 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Inventory API",
+    "description": "Product inventory management API deployed in Azure Function within the BYO VNet. Supports listing products, checking stock, and placing orders.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://{apimEndpoint}",
+      "description": "APIM Gateway (public) routing to private Azure Function",
+      "variables": {
+        "apimEndpoint": {
+          "default": "REPLACE_WITH_APIM_GATEWAY_URL"
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/inventory/list": {
+      "get": {
+        "operationId": "listProducts",
+        "summary": "List all products in inventory",
+        "description": "Returns all products, optionally filtered by category. Use this to browse available inventory.",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Filter by product category (Laptops, Phones, Tablets, Monitors, Accessories)",
+            "schema": {
+              "type": "string",
+              "enum": ["Laptops", "Phones", "Tablets", "Monitors", "Accessories"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of products",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "products": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    },
+                    "count": { "type": "integer" },
+                    "network": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/check": {
+      "get": {
+        "operationId": "checkStock",
+        "summary": "Check stock for a specific product",
+        "description": "Check the current stock level and availability for a product by SKU.",
+        "parameters": [
+          {
+            "name": "sku",
+            "in": "query",
+            "required": true,
+            "description": "Product SKU (e.g., LAPTOP-001, PHONE-001)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stock information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found"
+          }
+        }
+      }
+    },
+    "/inventory/order": {
+      "post": {
+        "operationId": "placeOrder",
+        "summary": "Place an order for a product",
+        "description": "Submit an order for a specific product by SKU and quantity.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["sku"],
+                "properties": {
+                  "sku": {
+                    "type": "string",
+                    "description": "Product SKU"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "description": "Number of units to order",
+                    "default": 1,
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfirmation"
+                }
+              }
+            }
+          },
+          "400": { "description": "Insufficient stock or invalid request" },
+          "404": { "description": "Product not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "category": { "type": "string" },
+          "stock": { "type": "integer" },
+          "price": { "type": "number" },
+          "warehouse": { "type": "string" }
+        }
+      },
+      "StockInfo": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string" },
+          "name": { "type": "string" },
+          "in_stock": { "type": "boolean" },
+          "quantity": { "type": "integer" },
+          "warehouse": { "type": "string" },
+          "network": { "type": "string" }
+        }
+      },
+      "OrderConfirmation": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "string" },
+          "sku": { "type": "string" },
+          "name": { "type": "string" },
+          "quantity": { "type": "integer" },
+          "total_price": { "type": "number" },
+          "status": { "type": "string" },
+          "warehouse": { "type": "string" },
+          "network": { "type": "string" }
+        }
+      }
+    },
+    "securitySchemes": {
+      "function_key": {
+        "type": "apiKey",
+        "name": "code",
+        "in": "query"
+      }
+    }
+  },
+  "security": [
+    {
+      "function_key": []
+    }
+  ]
+}
