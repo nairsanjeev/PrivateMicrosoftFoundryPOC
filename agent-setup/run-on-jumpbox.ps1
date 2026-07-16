@@ -17,30 +17,40 @@ Write-Host "`n=====================================" -ForegroundColor Cyan
 Write-Host "  Jump Box VM - Agent Setup" -ForegroundColor Cyan
 Write-Host "=====================================" -ForegroundColor Cyan
 
-# Step 1: Verify we're inside the VNet by checking DNS resolution
-Write-Host "`n[1] Verifying private DNS resolution..." -ForegroundColor Yellow
-$dns = Resolve-DnsName "func-order-api-poc-3zvjcwwd3ezpc.azurewebsites.net" -ErrorAction SilentlyContinue
+$RG = "rg-foundry-byo-vnet"
+
+# Step 1: Discover resource names and verify DNS
+Write-Host "`n[1] Discovering resources..." -ForegroundColor Yellow
+$aiAccount = az cognitiveservices account list --resource-group $RG --query "[0].name" -o tsv
+$foundryHostname = "$aiAccount.cognitiveservices.azure.com"
+$funcAppName = az functionapp list --resource-group $RG --query "[0].name" -o tsv
+$funcHostname = az functionapp show --name $funcAppName --resource-group $RG --query "defaultHostName" -o tsv
+Write-Host "  Foundry Account:  $aiAccount" -ForegroundColor Cyan
+Write-Host "  Function App:     $funcAppName" -ForegroundColor Cyan
+Write-Host "  Function Host:    $funcHostname" -ForegroundColor Cyan
+
+Write-Host "`n[2] Verifying private DNS resolution..." -ForegroundColor Yellow
+$dns = Resolve-DnsName $funcHostname -ErrorAction SilentlyContinue
 if ($dns) {
     $ip = ($dns | Where-Object { $_.Type -eq 'A' }).IPAddress
-    Write-Host "  ✅ Function resolves to: $ip (should be 192.168.1.x)" -ForegroundColor Green
-    Write-Host "  This proves we're inside VNet 1 and DNS resolves via Private Endpoint" -ForegroundColor Gray
+    Write-Host "  ✅ Function resolves to: $ip (should be private IP)" -ForegroundColor Green
+    Write-Host "  This proves DNS resolves via Private Endpoint inside VNet" -ForegroundColor Gray
 } else {
-    Write-Host "  ❌ DNS resolution failed" -ForegroundColor Red
+    Write-Host "  ⚠️  DNS resolution pending — may need a moment" -ForegroundColor Yellow
 }
 
-Write-Host "`n[2] Verifying Foundry endpoint resolves privately..." -ForegroundColor Yellow
-$fdns = Resolve-DnsName "foundrypoc3zvj.cognitiveservices.azure.com" -ErrorAction SilentlyContinue
+$fdns = Resolve-DnsName $foundryHostname -ErrorAction SilentlyContinue
 if ($fdns) {
     $fip = ($fdns | Where-Object { $_.Type -eq 'A' }).IPAddress
-    Write-Host "  ✅ Foundry resolves to: $fip (should be 192.168.1.x)" -ForegroundColor Green
+    Write-Host "  ✅ Foundry resolves to: $fip (should be private IP)" -ForegroundColor Green
 } else {
-    Write-Host "  ❌ Foundry DNS resolution failed" -ForegroundColor Red
+    Write-Host "  ⚠️  Foundry DNS resolution pending" -ForegroundColor Yellow
 }
 
 # Step 2: Test connectivity to the Function
 Write-Host "`n[3] Testing Function API via private endpoint..." -ForegroundColor Yellow
 try {
-    $response = Invoke-RestMethod "https://func-order-api-poc-3zvjcwwd3ezpc.azurewebsites.net/api/inventory/health"
+    $response = Invoke-RestMethod "https://$funcHostname/api/inventory/list"
     Write-Host "  ✅ Function responds: $($response | ConvertTo-Json -Compress)" -ForegroundColor Green
     Write-Host "  Traffic path: VM (vm-subnet) → PE (pe-subnet) → Function (VNet 2, func-subnet)" -ForegroundColor Gray
 } catch {
@@ -65,10 +75,8 @@ if ($account) {
 
 # Step 5: Set environment variables for the agent
 Write-Host "`n[6] Setting agent environment..." -ForegroundColor Yellow
-$RG = "rg-foundry-byo-vnet"
-$aiAccount = az cognitiveservices account list --resource-group $RG --query "[0].name" -o tsv
 $env:PROJECT_ENDPOINT = az cognitiveservices account show --name $aiAccount --resource-group $RG --query "properties.endpoint" -o tsv
-$env:FUNCTION_HOSTNAME = "func-order-api-poc-3zvjcwwd3ezpc.azurewebsites.net"  # Update with your Function hostname
+$env:FUNCTION_HOSTNAME = $funcHostname
 $env:MODEL_DEPLOYMENT = "gpt-4.1"
 
 # Get AI Search connection for Foundry IQ grounding

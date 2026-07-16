@@ -1,5 +1,111 @@
 # Microsoft Foundry — BYO VNet Isolation Demo Script
 
+---
+
+## Quick Start — Run the Demo
+
+> **One script. No manual configuration.** Connect to the jump box and run.
+
+### Prerequisites (already deployed)
+
+- Resource group `rg-foundry-byo-vnet` with Foundry infrastructure deployed
+- Backend (APIM + Function) deployed via `deploy-backend.bicep`
+- Knowledge base indexed via `setup_knowledge_base.py`
+- Jump Box VM accessible via Azure Bastion
+
+### Step 1: Connect to the Jump Box
+
+1. Go to **Azure Portal** → Resource Group `rg-foundry-byo-vnet` → `vm-jumpbox`
+2. Click **Connect** → **Bastion**
+3. Login: `azureadmin` / (password set during deployment)
+
+### Step 2: Run the Demo Script
+
+Open **PowerShell** on the jump box and run:
+
+```powershell
+C:\PrivateMicrosoftFoundryPOC\agent-setup\run-on-jumpbox.ps1
+```
+
+This single script will:
+| Step | What it does | Proves |
+|------|--------------|--------|
+| 1 | Discovers all deployed resources automatically | No hardcoded values |
+| 2 | Resolves Function + Foundry DNS to private IPs | Private DNS zones work |
+| 3 | Calls the Function API via private endpoint | Cross-VNet connectivity |
+| 4 | Installs Python packages | Dependencies ready |
+| 5 | Verifies Azure CLI login | Auth is working |
+| 6 | Auto-discovers connection IDs, sets env vars | Zero manual config |
+| 7 | Creates the **Contoso Procurement Agent** | Agent is live |
+| 7b | Runs 4 demo queries (with `--demo` flag) | End-to-end proof |
+
+### Step 3: Watch the Demo Output
+
+The script will run 4 sample queries that showcase both tools:
+
+| # | Query | Tool Used | Network Path |
+|---|-------|-----------|-------------|
+| 1 | "What is our return policy for enterprise bulk orders?" | **Foundry IQ** (AI Search) | agent-subnet → PE → AI Search |
+| 2 | "Show me all available laptops and their stock levels" | **Inventory API** (Function) | agent-subnet → PE → VNet 2 Function |
+| 3 | "ThinkPad X1 Carbon — specs, price, and stock?" | **Both** | KB for specs, API for stock |
+| 4 | "Place an order for 25 units of LAPTOP-001" | **Inventory API** (Function) | agent-subnet → PE → VNet 2 Function |
+
+### Step 4: Test Interactively (Optional)
+
+After the agent is created, test in the **Azure AI Foundry portal** (open Edge on the jump box):
+
+```
+https://ai.azure.com
+```
+
+Find the agent `contoso-procurement-agent` and try:
+- "What warranty options do we have?"
+- "Check stock for PHONE-001 and TABLET-001"
+- "I need 50 keyboards for new hires. What's the bulk discount?"
+- "Compare the ThinkPad X1 and MacBook Pro for our dev team"
+
+### Step 5: Show the React UI (Optional)
+
+If the React UI is deployed on the jump box:
+
+```powershell
+cd C:\PrivateMicrosoftFoundryPOC\react-ui
+npm install
+npm start
+```
+
+Then open `http://localhost:3000` in Edge on the jump box.
+
+---
+
+### Alternate: Run from Your Workstation (if Foundry has public access enabled)
+
+If the Foundry endpoint has `publicNetworkAccess: Enabled` for testing:
+
+```powershell
+# From your local machine (not the jump box)
+cd C:\PrivateMicrosoftFoundryPOC
+
+# Set environment variables (auto-discover)
+$RG = "rg-foundry-byo-vnet"
+$aiAccount = az cognitiveservices account list --resource-group $RG --query "[0].name" -o tsv
+$env:PROJECT_ENDPOINT = az cognitiveservices account show --name $aiAccount -g $RG --query "properties.endpoint" -o tsv
+$env:FUNCTION_HOSTNAME = az functionapp show --name (az functionapp list -g $RG --query "[0].name" -o tsv) -g $RG --query "defaultHostName" -o tsv
+$env:MODEL_DEPLOYMENT = "gpt-4.1"
+
+# Discover Search connection
+$subId = az account show --query id -o tsv
+$projects = az rest --method get --url "https://management.azure.com/subscriptions/$subId/resourceGroups/$RG/providers/Microsoft.CognitiveServices/accounts/$aiAccount/projects?api-version=2025-04-01-preview" --only-show-errors | ConvertFrom-Json
+$projId = $projects.value[0].id
+$conns = az rest --method get --url "https://management.azure.com${projId}/connections?api-version=2025-04-01-preview" --only-show-errors | ConvertFrom-Json
+$env:SEARCH_CONNECTION_ID = ($conns.value | Where-Object { $_.properties.category -eq "CognitiveSearch" }).properties.resourceId
+
+# Create agent and run demo
+python agent-setup/create_grounded_agent.py --demo
+```
+
+---
+
 ## Overview
 
 This demo walks through how Microsoft Foundry Agent Service is deployed with **Bring-Your-Own Virtual Network** (BYO VNet) isolation, how an agent calls a private API through APIM, and how grounded knowledge works via AI Search (Foundry IQ) — all with network isolation.
